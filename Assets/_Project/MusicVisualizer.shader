@@ -73,21 +73,22 @@ Shader "Unlit/MusicVisualizer"
                 float angle = round((atan2(uv.x, uv.y) + PI) * range) / range;
                 float2 radialUvOffset = float2(sin(angle), cos(angle)) * -.3;
                 
-                float2 rotatedUV = Rotate2D(uv, 0.015625 * 2);
+                float2 rotatedUV = Rotate2D(uv, 0.015625 * 3);
                 float radialGrad01 = ((atan2(rotatedUV.x, rotatedUV.y) + PI) / TAU);
 
                 float bandsGrad = radialGrad01 * FREQUENCY_BANDS;
                 float bandIndex = floor(bandsGrad);
                 float sample = min(_Samples[bandIndex] * _Strength, _MaxAmplitude);
 
-                float bandSegment = Segment_float(uv - radialUvOffset, float2(0, 0), radialUvOffset * sample) - 0.01;
+                float bandSegment = .01 / Segment_float(uv - radialUvOffset, float2(0, 0), radialUvOffset * sample);
 
-                float ring = Annular(CircleSDF(uv, .48) + (sin(radialGrad01 * TAU * 32)) * .05 * sample, 0.005);
-                float arc = sdArc(Rotate2D(uv, PI / .8), float2(sin(PI * .75), cos(PI * .75)), 0.15 + _Samples[50] * .2,
-                                  0.005);
-                float arc2 = sdArc(Rotate2D(uv, PI * 2.25), float2(sin(PI * .2), cos(PI * .2)), 0.15, 0.005);
-                float res = min(min(bandSegment, ring), min(arc, arc2));
-                float3 color = SampleHard(res);
+                float ring = .0025 / Annular(CircleSDF(uv, .48) + (sin(radialGrad01 * TAU * 32)) * .05 * sample, 0);
+                float arc = .0025 / sdArc(Rotate2D(uv, PI / .8), float2(sin(PI * .75), cos(PI * .75)), 0.15 + _Samples[50] * .2,
+                                  0);
+                float arc2 = .0025 / sdArc(Rotate2D(uv, PI * 2.25), float2(sin(PI * .2), cos(PI * .2)), 0.15, 0);
+                float res = max(bandSegment, max(arc, arc2));
+                float3 color = max(res, ring);
+                color = color * float3(0.9, 0.65, 0.5);
                 return float4(color, 1);
             }
             ENDCG
