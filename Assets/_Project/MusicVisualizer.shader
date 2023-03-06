@@ -2,7 +2,9 @@ Shader "Unlit/MusicVisualizer"
 {
     Properties
     {
-        _MainTex ("Texture", 2D) = "white" {}
+        [HideInInspector] _MainTex ("Texture", 2D) = "white" {}
+        _MaxAmplitude ("MaxAmplitude", Float) = 0.2
+        _Strength ("Strength", Float) = 1
     }
     SubShader
     {
@@ -17,11 +19,16 @@ Shader "Unlit/MusicVisualizer"
             #include "UnityCG.cginc"
             #include "Packages/com.quizandpuzzle.shaderlib/Runtime/math.cginc"
             #include "Packages/com.quizandpuzzle.shaderlib/Runtime/sdf.cginc"
+            #include "Packages/com.quizandpuzzle.shaderlib/Runtime/shaderlib.cginc"
 
             sampler2D _MainTex;
 
-            float _Samples[64];
 
+            #define FREQUENCY_BANDS 64
+            float _Samples[FREQUENCY_BANDS];
+
+            float _MaxAmplitude;
+            float _Strength;
 
             struct MeshData
             {
@@ -32,7 +39,6 @@ Shader "Unlit/MusicVisualizer"
             struct Interpolators
             {
                 float2 uv : TEXCOORD0;
-
                 float4 vertex : SV_POSITION;
             };
 
@@ -42,12 +48,6 @@ Shader "Unlit/MusicVisualizer"
                 o.uv = v.uv;
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 return o;
-            }
-
-            float opSmoothUnion(float d1, float d2, float k)
-            {
-                float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
-                return lerp(d2, d1, h) - k * h * (1.0 - h);
             }
 
             float Segment_float(in float2 p, in float2 a, in float2 b)
@@ -67,40 +67,26 @@ Shader "Unlit/MusicVisualizer"
 
             float4 fs(Interpolators interpolators) : SV_Target
             {
-                float2 uv = interpolators.uv;
-                uv -= 0.5;
-                uv.x *= 1.77;
+                float2 uv = AspectRatioUV(interpolators.uv - 0.5);
 
-                float size = 0.22;
-
-                float radialGrad = sin((atan2(uv.x, uv.y) + PI) * 8) * 0.1;
+                float range = FREQUENCY_BANDS / TAU;
+                float angle = round((atan2(uv.x, uv.y) + PI) * range) / range;
+                float2 radialUvOffset = float2(sin(angle), cos(angle)) * -.3;
+                
                 float2 rotatedUV = Rotate2D(uv, 0.015625 * 2);
-                float radialGrad2 = (atan2(rotatedUV.x, rotatedUV.y) + PI) / TAU;
+                float radialGrad01 = ((atan2(rotatedUV.x, rotatedUV.y) + PI) / TAU);
 
-                float range01 = 64 / 1;
-                float radial01 = radialGrad2 * range01;
-                float tGrad = floor(radial01);
-                float mod = fmod(radialGrad2, 0.015625);
-                mod += mod * tGrad;
-                float t = InverseLerp(-.5, .5, tGrad);
-                int sampleIndex = Lerp(0, 8, tGrad);
-                float sample = _Samples[tGrad];
-                // float circl2 = sin(radialGrad2 * TAU *8 + cos(length(uv) * 100 * sample) * radialGrad);
-                // float circle = CircleSDF(uv, size) - circl2 * 0.1;
-                float range = 64 / TAU;
-                float radial = atan2(uv.x, uv.y) * range;
-                float angle = round(radial) / range;
-                float2 radialUvOffset = float2(sin(angle), cos(angle)) * .3;
+                float bandsGrad = radialGrad01 * FREQUENCY_BANDS;
+                float bandIndex = floor(bandsGrad);
+                float sample = min(_Samples[bandIndex] * _Strength, _MaxAmplitude);
 
-                float circle = Segment_float(uv - radialUvOffset, float2(0, 0), radialUvOffset * sample * 2) - .01;
+                float bandSegment = Segment_float(uv - radialUvOffset, float2(0, 0), radialUvOffset * sample) - 0.01;
 
-
-                //float wave = uv.y + sin(uv.x * TAU * 10) * .1 + _Samples[sampleIndex] * 10 * (t > 0) * (t < 1);
-                float circle3 = Annular(CircleSDF(uv, .48) + (sin(radialGrad2 * TAU * 32)) * .05 * sample * 2, 0.005);
-                float arc = sdArc(Rotate2D(uv, PI/.8), float2(sin(PI*.75), cos(PI*.75)), 0.15 + _Samples[50] * .2, 0.005);
-                float arc2 = sdArc(Rotate2D(uv, PI*2.25), float2(sin(PI*.2), cos(PI*.2)), 0.15, 0.005);
-                float res = min(min(circle, circle3), min(arc, arc2));
-                //float3 color = sin(radialGrad2 * TAU * 32) * .5 +.5;
+                float ring = Annular(CircleSDF(uv, .48) + (sin(radialGrad01 * TAU * 32)) * .05 * sample, 0.005);
+                float arc = sdArc(Rotate2D(uv, PI / .8), float2(sin(PI * .75), cos(PI * .75)), 0.15 + _Samples[50] * .2,
+                                  0.005);
+                float arc2 = sdArc(Rotate2D(uv, PI * 2.25), float2(sin(PI * .2), cos(PI * .2)), 0.15, 0.005);
+                float res = min(min(bandSegment, ring), min(arc, arc2));
                 float3 color = SampleHard(res);
                 return float4(color, 1);
             }
